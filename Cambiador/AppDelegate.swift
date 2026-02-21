@@ -96,6 +96,12 @@ private enum Defaults {
         guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: urlString) else { return }
 
+        // Only forward http and https URLs — reject file://, javascript://, etc.
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            NSLog("Cambiador: blocked non-HTTP URL scheme: \(url.scheme ?? "nil")")
+            return
+        }
+
         if isReady {
             openURLInSelectedBrowser(url)
         } else {
@@ -108,8 +114,8 @@ private enum Defaults {
         let targetID = selectedBrowserID()
 
         guard let appURL = applicationURL(forBundleID: targetID) else {
-            // Fallback: let the OS figure it out (skip ourselves)
-            NSWorkspace.shared.open(url)
+            // Fallback: open in Safari directly to avoid infinite loop (we are the default browser)
+            openInSafariFallback(url)
             return
         }
 
@@ -117,10 +123,20 @@ private enum Defaults {
         NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config) { _, error in
             if let error = error {
                 NSLog("Cambiador: failed to open URL in \(targetID): \(error)")
-                // Last resort fallback
-                NSWorkspace.shared.open(url)
+                // Fallback to Safari to avoid infinite loop
+                self.openInSafariFallback(url)
             }
         }
+    }
+
+    private func openInSafariFallback(_ url: URL) {
+        let safariID = "com.apple.safari"
+        guard let safariURL = applicationURL(forBundleID: safariID) else {
+            NSLog("Cambiador: Safari not found, cannot open URL")
+            return
+        }
+        let config = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.open([url], withApplicationAt: safariURL, configuration: config, completionHandler: nil)
     }
 
     // MARK: - Selected Browser (Internal Preference)
