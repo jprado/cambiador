@@ -11,15 +11,44 @@ struct BrowserInfo {
     let url: URL
 }
 
+// MARK: - UserDefaults Keys
+
+private enum Defaults {
+    static let selectedBrowser = "ArreSelectedBrowserID"
+    static let hasClaimedDefault = "ArreHasClaimedDefault"
+    static let previousDefault = "ArrePreviousDefaultBrowserID"
+}
+
 // MARK: - App Delegate
 
 @objc class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem!
+    private let selfBundleID = Bundle.main.bundleIdentifier ?? "com.jprado.arre"
+    private var pendingURLs: [URL] = []
+    private var isReady = false
+
+    // MARK: - Init (register URL handler ASAP, before app.run() processes events)
+
+    override init() {
+        super.init()
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURL(_:withReply:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+    }
 
     // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // On first launch: remember the user's current default and claim the role
+        if !UserDefaults.standard.bool(forKey: Defaults.hasClaimedDefault) {
+            captureAndClaimDefault()
+        }
+
+        // Set up the menu bar
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = statusItem.button {
@@ -31,6 +60,77 @@ struct BrowserInfo {
         statusItem.menu = menu
 
         updateStatusIcon()
+
+        // Now process any URLs that arrived during launch
+        isReady = true
+        for url in pendingURLs {
+            openURLInSelectedBrowser(url)
+        }
+        pendingURLs.removeAll()
+    }
+
+    // MARK: - First-Launch: Capture Previous Default & Claim
+
+    private func captureAndClaimDefault() {
+        // Remember whatever browser was default before Arre
+        if let current = systemDefaultBrowserID(), current.lowercased() != selfBundleID.lowercased() {
+            UserDefaults.standard.set(current, forKey: Defaults.previousDefault)
+            // Pre-select that browser so links keep going to the same place
+            if UserDefaults.standard.string(forKey: Defaults.selectedBrowser) == nil {
+                UserDefaults.standard.set(current, forKey: Defaults.selectedBrowser)
+            }
+        }
+
+        // Set Arre as the system default browser (one-time OS confirmation)
+        let schemes: [CFString] = ["http" as CFString, "https" as CFString]
+        for scheme in schemes {
+            LSSetDefaultHandlerForURLScheme(scheme, selfBundleID as CFString)
+        }
+
+        UserDefaults.standard.set(true, forKey: Defaults.hasClaimedDefault)
+    }
+
+    // MARK: - URL Handling (Proxy)
+
+    @objc private func handleGetURL(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: urlString) else { return }
+
+        if isReady {
+            openURLInSelectedBrowser(url)
+        } else {
+            // App is still launching — buffer the URL
+            pendingURLs.append(url)
+        }
+    }
+
+    private func openURLInSelectedBrowser(_ url: URL) {
+        let targetID = selectedBrowserID()
+
+        guard let appURL = applicationURL(forBundleID: targetID) else {
+            // Fallback: let the OS figure it out (skip ourselves)
+            NSWorkspace.shared.open(url)
+            return
+        }
+
+        let config = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config) { _, error in
+            if let error = error {
+                NSLog("Arre: failed to open URL in \(targetID): \(error)")
+                // Last resort fallback
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    // MARK: - Selected Browser (Internal Preference)
+
+    private func selectedBrowserID() -> String {
+        if let stored = UserDefaults.standard.string(forKey: Defaults.selectedBrowser) {
+            return stored
+        }
+        // Fallback to whatever was default before Arre, or Safari
+        return UserDefaults.standard.string(forKey: Defaults.previousDefault) ?? "com.apple.safari"
     }
 
     // MARK: - Browser Discovery
@@ -43,18 +143,17 @@ struct BrowserInfo {
             handlerIDs = []
         }
 
-        // De-duplicate (case-insensitive)
+        // De-duplicate (case-insensitive), exclude ourselves
         var seen = Set<String>()
         var browsers: [BrowserInfo] = []
 
         for rawID in handlerIDs {
             let key = rawID.lowercased()
+            guard key != selfBundleID.lowercased() else { continue }
             guard !seen.contains(key) else { continue }
             seen.insert(key)
 
-            guard let urls = LSCopyApplicationURLsForBundleIdentifier(rawID as CFString, nil)?
-                    .takeRetainedValue() as? [URL],
-                  let appURL = urls.first else { continue }
+            guard let appURL = applicationURL(forBundleID: rawID) else { continue }
 
             let name = fileNameWithoutExtension(appURL)
             let icon = NSWorkspace.shared.icon(forFile: appURL.path)
@@ -67,11 +166,11 @@ struct BrowserInfo {
         return browsers
     }
 
-    private func currentDefaultBrowserID() -> String? {
+    private func systemDefaultBrowserID() -> String? {
         guard let cfStr = LSCopyDefaultHandlerForURLScheme("https" as CFString)?.takeRetainedValue() else {
             return nil
         }
-        return (cfStr as String).lowercased()
+        return cfStr as String
     }
 
     // MARK: - Menu Building
@@ -81,12 +180,12 @@ struct BrowserInfo {
         menu.removeAllItems()
 
         let browsers = installedBrowsers()
-        let currentID = currentDefaultBrowserID()
+        let selectedID = selectedBrowserID().lowercased()
 
         // Header
-        let header = NSMenuItem(title: "Default Browser", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: "Forward Links To", action: nil, keyEquivalent: "")
         header.attributedTitle = NSAttributedString(
-            string: "Default Browser",
+            string: "Forward Links To",
             attributes: [.font: NSFont.boldSystemFont(ofSize: 13)]
         )
         header.isEnabled = false
@@ -109,7 +208,7 @@ struct BrowserInfo {
                 item.representedObject = browser.bundleID
                 item.image = browser.icon
 
-                if browser.bundleID.lowercased() == currentID {
+                if browser.bundleID.lowercased() == selectedID {
                     item.state = .on
                 }
 
@@ -118,6 +217,19 @@ struct BrowserInfo {
         }
 
         menu.addItem(.separator())
+
+        // Reclaim default (in case user changed it elsewhere)
+        let sysDefault = systemDefaultBrowserID()?.lowercased()
+        if sysDefault != selfBundleID.lowercased() {
+            let reclaim = NSMenuItem(
+                title: "Set Arre as Default Browser",
+                action: #selector(reclaimDefault),
+                keyEquivalent: ""
+            )
+            reclaim.target = self
+            menu.addItem(reclaim)
+            menu.addItem(.separator())
+        }
 
         // Refresh
         let refresh = NSMenuItem(title: "Refresh Browsers", action: #selector(refreshClicked), keyEquivalent: "r")
@@ -149,11 +261,10 @@ struct BrowserInfo {
 
     private func updateStatusIcon() {
         guard let button = statusItem.button else { return }
-        let currentID = currentDefaultBrowserID()
+        let selectedID = selectedBrowserID().lowercased()
         let browsers = installedBrowsers()
 
-        if let id = currentID,
-           let browser = browsers.first(where: { $0.bundleID.lowercased() == id }),
+        if let browser = browsers.first(where: { $0.bundleID.lowercased() == selectedID }),
            let icon = browser.icon {
             let copy = icon.copy() as! NSImage
             copy.size = NSSize(width: 18, height: 18)
@@ -168,13 +279,15 @@ struct BrowserInfo {
 
     @objc private func browserSelected(_ sender: NSMenuItem) {
         guard let bundleID = sender.representedObject as? String else { return }
+        UserDefaults.standard.set(bundleID, forKey: Defaults.selectedBrowser)
+        updateStatusIcon()
+    }
 
+    @objc private func reclaimDefault() {
         let schemes: [CFString] = ["http" as CFString, "https" as CFString]
         for scheme in schemes {
-            LSSetDefaultHandlerForURLScheme(scheme, bundleID as CFString)
+            LSSetDefaultHandlerForURLScheme(scheme, selfBundleID as CFString)
         }
-
-        updateStatusIcon()
     }
 
     @objc private func refreshClicked() {
@@ -203,6 +316,12 @@ struct BrowserInfo {
     }
 
     // MARK: - Helpers
+
+    private func applicationURL(forBundleID bundleID: String) -> URL? {
+        guard let urls = LSCopyApplicationURLsForBundleIdentifier(bundleID as CFString, nil)?
+                .takeRetainedValue() as? [URL] else { return nil }
+        return urls.first
+    }
 
     private func fileNameWithoutExtension(_ url: URL) -> String {
         let name = url.deletingPathExtension().lastPathComponent
