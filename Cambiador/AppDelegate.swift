@@ -14,9 +14,9 @@ struct BrowserInfo {
 // MARK: - UserDefaults Keys
 
 private enum Defaults {
-    static let selectedBrowser = "ArreSelectedBrowserID"
-    static let hasClaimedDefault = "ArreHasClaimedDefault"
-    static let previousDefault = "ArrePreviousDefaultBrowserID"
+    static let selectedBrowser = "CambiadorSelectedBrowserID"
+    static let hasClaimedDefault = "CambiadorHasClaimedDefault"
+    static let previousDefault = "CambiadorPreviousDefaultBrowserID"
 }
 
 // MARK: - App Delegate
@@ -24,7 +24,7 @@ private enum Defaults {
 @objc class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem!
-    private let selfBundleID = Bundle.main.bundleIdentifier ?? "com.jprado.arre"
+    private let selfBundleID = Bundle.main.bundleIdentifier ?? "com.jprado.cambiador"
     private var pendingURLs: [URL] = []
     private var isReady = false
 
@@ -52,7 +52,7 @@ private enum Defaults {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "globe", accessibilityDescription: "Arre")
+            button.image = NSImage(systemSymbolName: "globe", accessibilityDescription: "Cambiador")
         }
 
         let menu = NSMenu()
@@ -72,7 +72,7 @@ private enum Defaults {
     // MARK: - First-Launch: Capture Previous Default & Claim
 
     private func captureAndClaimDefault() {
-        // Remember whatever browser was default before Arre
+        // Remember whatever browser was default before Cambiador
         if let current = systemDefaultBrowserID(), current.lowercased() != selfBundleID.lowercased() {
             UserDefaults.standard.set(current, forKey: Defaults.previousDefault)
             // Pre-select that browser so links keep going to the same place
@@ -81,7 +81,7 @@ private enum Defaults {
             }
         }
 
-        // Set Arre as the system default browser (one-time OS confirmation)
+        // Set Cambiador as the system default browser (one-time OS confirmation)
         let schemes: [CFString] = ["http" as CFString, "https" as CFString]
         for scheme in schemes {
             LSSetDefaultHandlerForURLScheme(scheme, selfBundleID as CFString)
@@ -116,7 +116,7 @@ private enum Defaults {
         let config = NSWorkspace.OpenConfiguration()
         NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config) { _, error in
             if let error = error {
-                NSLog("Arre: failed to open URL in \(targetID): \(error)")
+                NSLog("Cambiador: failed to open URL in \(targetID): \(error)")
                 // Last resort fallback
                 NSWorkspace.shared.open(url)
             }
@@ -129,7 +129,7 @@ private enum Defaults {
         if let stored = UserDefaults.standard.string(forKey: Defaults.selectedBrowser) {
             return stored
         }
-        // Fallback to whatever was default before Arre, or Safari
+        // Fallback to whatever was default before Cambiador, or Safari
         return UserDefaults.standard.string(forKey: Defaults.previousDefault) ?? "com.apple.safari"
     }
 
@@ -222,7 +222,7 @@ private enum Defaults {
         let sysDefault = systemDefaultBrowserID()?.lowercased()
         if sysDefault != selfBundleID.lowercased() {
             let reclaim = NSMenuItem(
-                title: "Set Arre as Default Browser",
+                title: "Set Cambiador as Default Browser",
                 action: #selector(reclaimDefault),
                 keyEquivalent: ""
             )
@@ -252,7 +252,7 @@ private enum Defaults {
         menu.addItem(.separator())
 
         // Quit
-        let quit = NSMenuItem(title: "Quit Arre", action: #selector(quitClicked), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit Cambiador", action: #selector(quitClicked), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
     }
@@ -271,7 +271,7 @@ private enum Defaults {
             copy.isTemplate = false
             button.image = copy
         } else {
-            button.image = NSImage(systemSymbolName: "globe", accessibilityDescription: "Arre")
+            button.image = NSImage(systemSymbolName: "globe", accessibilityDescription: "Cambiador")
         }
     }
 
@@ -307,7 +307,7 @@ private enum Defaults {
                 sender.state = .on
             }
         } catch {
-            NSLog("Arre: launch-at-login toggle failed: \(error)")
+            NSLog("Cambiador: launch-at-login toggle failed: \(error)")
         }
     }
 
