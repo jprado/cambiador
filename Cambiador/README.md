@@ -34,7 +34,7 @@ URL opens in Chrome / Safari / Firefox / etc.
 
 ## Installation
 ```bash
-git clone https://github.com/yourusername/cambiador.git
+git clone https://github.com/jprado/cambiador.git
 cd cambiador
 open Cambiador.xcodeproj
 ```
