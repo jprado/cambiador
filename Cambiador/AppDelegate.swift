@@ -82,12 +82,31 @@ private enum Defaults {
         }
 
         // Set Cambiador as the system default browser (one-time OS confirmation)
-        let schemes: [CFString] = ["http" as CFString, "https" as CFString]
+        let selfURL = Bundle.main.bundleURL
+        let schemes = ["http", "https"]
+        let group = DispatchGroup()
+        let syncQueue = DispatchQueue(label: "com.jprado.cambiador.claimDefault")
+        var anySucceeded = false
+
         for scheme in schemes {
-            LSSetDefaultHandlerForURLScheme(scheme, selfBundleID as CFString)
+            group.enter()
+            NSWorkspace.shared.setDefaultApplication(at: selfURL,
+                                                     toOpenURLsWithScheme: scheme) { error in
+                if let error = error {
+                    NSLog("Cambiador: failed to set default for \(scheme): \(error)")
+                } else {
+                    syncQueue.sync { anySucceeded = true }
+                }
+                group.leave()
+            }
         }
 
-        UserDefaults.standard.set(true, forKey: Defaults.hasClaimedDefault)
+        group.notify(queue: .main) {
+            let succeeded = syncQueue.sync { anySucceeded }
+            if succeeded {
+                UserDefaults.standard.set(true, forKey: Defaults.hasClaimedDefault)
+            }
+        }
     }
 
     // MARK: - URL Handling (Proxy)
@@ -152,24 +171,24 @@ private enum Defaults {
     // MARK: - Browser Discovery
 
     private func installedBrowsers() -> [BrowserInfo] {
-        let handlerIDs: [String]
-        if let cfArray = LSCopyAllHandlersForURLScheme("https" as CFString)?.takeRetainedValue() {
-            handlerIDs = cfArray as? [String] ?? []
-        } else {
-            handlerIDs = []
+        guard let probeURL = URL(string: "https://example.com") else {
+            NSLog("Cambiador: failed to create probe URL for browser discovery")
+            return []
         }
+        let appURLs = NSWorkspace.shared.urlsForApplications(toOpen: probeURL)
 
         // De-duplicate (case-insensitive), exclude ourselves
         var seen = Set<String>()
         var browsers: [BrowserInfo] = []
 
-        for rawID in handlerIDs {
+        for appURL in appURLs {
+            guard let bundle = Bundle(url: appURL),
+                  let rawID = bundle.bundleIdentifier else { continue }
+
             let key = rawID.lowercased()
             guard key != selfBundleID.lowercased() else { continue }
             guard !seen.contains(key) else { continue }
             seen.insert(key)
-
-            guard let appURL = applicationURL(forBundleID: rawID) else { continue }
 
             let name = fileNameWithoutExtension(appURL)
             let icon = NSWorkspace.shared.icon(forFile: appURL.path)
@@ -183,10 +202,11 @@ private enum Defaults {
     }
 
     private func systemDefaultBrowserID() -> String? {
-        guard let cfStr = LSCopyDefaultHandlerForURLScheme("https" as CFString)?.takeRetainedValue() else {
+        guard let probeURL = URL(string: "https://example.com"),
+              let appURL = NSWorkspace.shared.urlForApplication(toOpen: probeURL) else {
             return nil
         }
-        return cfStr as String
+        return Bundle(url: appURL)?.bundleIdentifier
     }
 
     // MARK: - Menu Building
@@ -282,7 +302,10 @@ private enum Defaults {
 
         if let browser = browsers.first(where: { $0.bundleID.lowercased() == selectedID }),
            let icon = browser.icon {
-            let copy = icon.copy() as! NSImage
+            guard let copy = icon.copy() as? NSImage else {
+                NSLog("Cambiador: failed to copy browser icon for status bar")
+                return
+            }
             copy.size = NSSize(width: 18, height: 18)
             copy.isTemplate = false
             button.image = copy
@@ -300,9 +323,15 @@ private enum Defaults {
     }
 
     @objc private func reclaimDefault() {
-        let schemes: [CFString] = ["http" as CFString, "https" as CFString]
+        let selfURL = Bundle.main.bundleURL
+        let schemes = ["http", "https"]
         for scheme in schemes {
-            LSSetDefaultHandlerForURLScheme(scheme, selfBundleID as CFString)
+            NSWorkspace.shared.setDefaultApplication(at: selfURL,
+                                                     toOpenURLsWithScheme: scheme) { error in
+                if let error = error {
+                    NSLog("Cambiador: failed to reclaim default for \(scheme): \(error)")
+                }
+            }
         }
     }
 
@@ -334,9 +363,7 @@ private enum Defaults {
     // MARK: - Helpers
 
     private func applicationURL(forBundleID bundleID: String) -> URL? {
-        guard let urls = LSCopyApplicationURLsForBundleIdentifier(bundleID as CFString, nil)?
-                .takeRetainedValue() as? [URL] else { return nil }
-        return urls.first
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
     }
 
     private func fileNameWithoutExtension(_ url: URL) -> String {
