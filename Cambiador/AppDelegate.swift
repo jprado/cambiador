@@ -84,16 +84,29 @@ private enum Defaults {
         // Set Cambiador as the system default browser (one-time OS confirmation)
         let selfURL = Bundle.main.bundleURL
         let schemes = ["http", "https"]
+        let group = DispatchGroup()
+        let syncQueue = DispatchQueue(label: "com.jprado.cambiador.claimDefault")
+        var anySucceeded = false
+
         for scheme in schemes {
+            group.enter()
             NSWorkspace.shared.setDefaultApplication(at: selfURL,
                                                      toOpenURLsWithScheme: scheme) { error in
                 if let error = error {
                     NSLog("Cambiador: failed to set default for \(scheme): \(error)")
+                } else {
+                    syncQueue.sync { anySucceeded = true }
                 }
+                group.leave()
             }
         }
 
-        UserDefaults.standard.set(true, forKey: Defaults.hasClaimedDefault)
+        group.notify(queue: .main) {
+            let succeeded = syncQueue.sync { anySucceeded }
+            if succeeded {
+                UserDefaults.standard.set(true, forKey: Defaults.hasClaimedDefault)
+            }
+        }
     }
 
     // MARK: - URL Handling (Proxy)
