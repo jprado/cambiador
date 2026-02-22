@@ -158,7 +158,10 @@ private enum Defaults {
     // MARK: - Browser Discovery
 
     private func installedBrowsers() -> [BrowserInfo] {
-        guard let probeURL = URL(string: "https://example.com") else { return [] }
+        guard let probeURL = URL(string: "https://example.com") else {
+            NSLog("Cambiador: failed to create probe URL for browser discovery")
+            return []
+        }
         let appURLs = NSWorkspace.shared.urlsForApplications(toOpen: probeURL)
 
         // De-duplicate (case-insensitive), exclude ourselves
@@ -286,7 +289,10 @@ private enum Defaults {
 
         if let browser = browsers.first(where: { $0.bundleID.lowercased() == selectedID }),
            let icon = browser.icon {
-            guard let copy = icon.copy() as? NSImage else { return }
+            guard let copy = icon.copy() as? NSImage else {
+                NSLog("Cambiador: failed to copy browser icon for status bar")
+                return
+            }
             copy.size = NSSize(width: 18, height: 18)
             copy.isTemplate = false
             button.image = copy
