@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+    permissions:
+      contents: write # Needed to upload files to GitHub Releases
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and Package
+        run: |
+          # Extract the version number without the 'v' prefix (e.g., v1.0.0 -> 1.0.0)
+          VERSION=${GITHUB_REF_NAME#v}
+          ./scripts/build-release.sh "$VERSION"
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

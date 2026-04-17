@@ -15,3 +15,6 @@ DerivedData/
 .build/
 Packages/
 Package.resolved
+
+# Release artifacts (produced by scripts/build-release.sh)
+dist/

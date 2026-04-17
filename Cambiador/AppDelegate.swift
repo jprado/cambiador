@@ -190,6 +190,13 @@ private enum Defaults {
             guard !seen.contains(key) else { continue }
             seen.insert(key)
 
+            // Skip apps not in a standard install location (e.g. update staging artifacts,
+            // plugin helpers, or anything in ~/Library/Application Support/...)
+            guard isStandardInstallLocation(appURL) else { continue }
+
+            // Skip stale Launch Services entries — app was uninstalled but cache wasn't flushed
+            guard FileManager.default.fileExists(atPath: appURL.path) else { continue }
+
             let name = fileNameWithoutExtension(appURL)
             let icon = NSWorkspace.shared.icon(forFile: appURL.path)
             icon.size = NSSize(width: 18, height: 18)
@@ -199,6 +206,16 @@ private enum Defaults {
 
         browsers.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         return browsers
+    }
+
+    /// Returns true only for apps installed in a standard macOS application directory.
+    /// Filters out update-staging bundles, plugin helpers, and other non-user-facing artifacts.
+    private func isStandardInstallLocation(_ url: URL) -> Bool {
+        let path = url.path
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return path.hasPrefix("/Applications/")
+            || path.hasPrefix("/System/Applications/")
+            || path.hasPrefix("\(home)/Applications/")
     }
 
     private func systemDefaultBrowserID() -> String? {

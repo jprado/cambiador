@@ -1,4 +1,6 @@
 # Cambiador
+[![GitHub release](https://img.shields.io/github/v/release/jprado/cambiador)](https://github.com/jprado/cambiador/releases)
+
 A simple macOS menu bar app for switching your default browser. Pick a browser, and all your links open there. Need to switch? Click the menu bar and choose a different one.
 
 ## Why Cambiador?
@@ -32,7 +34,26 @@ URL opens in Chrome / Safari / Firefox / etc.
 - **Reclaim default** — if something else takes over as default browser, a menu item lets you reclaim it
 - **Lightweight** — native Swift/AppKit, no external dependencies, minimal resource usage
 
-## Installation
+![Cambiador menu bar dropdown showing browser list](docs/screenshot.png)
+
+## Download
+Grab the latest `Cambiador-v*.dmg` from the [Releases page](https://github.com/jprado/cambiador/releases):
+
+1. Open the `.dmg` and drag **Cambiador.app** into your **Applications** folder.
+2. On first launch, macOS Gatekeeper will block the app because it isn't notarized.  
+   **Right-click (or Control-click) Cambiador.app → Open → Open** to allow it once.  
+   *(Alternatively: System Settings → Privacy & Security → scroll down → "Open Anyway".)*
+3. macOS asks once if Cambiador can become your default browser — say **Allow**.
+4. The menu bar icon appears. You're done.
+
+**Optional — verify the download:**
+```bash
+shasum -c Cambiador-v*.dmg.sha256
+```
+
+## Build from Source
+No pre-built binary needed — you can build it yourself with Xcode:
+
 ```bash
 git clone https://github.com/jprado/cambiador.git
 cd cambiador
@@ -41,11 +62,17 @@ open Cambiador.xcodeproj
 
 Build and run in Xcode (⌘R). No Apple Developer account needed.
 
-## First Launch
-1. Build and run (⌘R) or open the built `.app`
-2. macOS will ask **once** if you want Cambiador as your default browser — say yes
-3. Cambiador remembers your previous default browser and pre-selects it
-4. The menu bar icon appears — you're done
+To produce a release DMG locally:
+
+```bash
+./scripts/build-release.sh        # uses version from Info.plist
+# or
+./scripts/build-release.sh 1.2.0  # specify version explicitly
+# → dist/Cambiador-v<VERSION>.dmg
+```
+
+On first run, macOS will ask once if you want Cambiador as your default browser — say yes.
+Cambiador remembers your previous default browser and pre-selects it in the menu.
 
 ## Usage
 1. Click the Cambiador icon in the menu bar
@@ -55,7 +82,7 @@ Build and run in Xcode (⌘R). No Apple Developer account needed.
 
 ## Requirements
 - macOS 12.0 (Monterey) or later
-- Xcode to build
+- **To build from source:** Xcode
 
 ## Security
 - **URL scheme validation** — only `http` and `https` URLs are forwarded; all other schemes are blocked and logged
